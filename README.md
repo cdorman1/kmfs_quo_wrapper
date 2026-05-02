@@ -1,81 +1,162 @@
-# KMF Schaumburg Quo/OpenPhone Wrapper
+# KMFS QUO Wrapper
 
-A tiny Python FastAPI wrapper that lets a Custom GPT fetch the latest 10 stored calls for the Krav Maga Force - Schaumburg inbox and return:
+Lightweight FastAPI service that integrates with the OpenPhone (QUO) API to aggregate conversations, messages, call summaries, and voicemails into a single structured endpoint.
 
-- name
-- phone_number
-- call_details
+Designed to power internal tooling and GPT-based workflows for Krav Maga Force Schaumburg.
 
-## Why this wrapper uses a webhook
+---
 
-The OpenPhone/Quo API spec you provided has endpoints for:
+## Features
 
-- `GET /v1/calls/{callId}`
-- `GET /v1/call-transcripts/{id}`
-- `GET /v1/call-summaries/{callId}`
+- Pulls latest conversations from OpenPhone
+- Syncs:
+  - Messages
+  - Call summaries
+  - Voicemails (transcript + recording URL)
+- Stores data locally (SQLite) or in Postgres
+- Minimizes API usage by only fetching latest 10 active conversations
+- Provides a unified `/activity` endpoint for downstream consumption
 
-But `GET /v1/calls` requires a `participants` parameter, so it is not a clean global “last 10 calls for this inbox” endpoint. This wrapper keeps a small SQLite list of calls received by webhook, then uses the transcript/summary endpoints when your GPT asks for the latest 10 calls.
+---
 
-## Environment variables
+## API Endpoints
 
-Set these in Render/Railway/Vercel/etc.
+### Sync Latest Activity
 
-```bash
-OPENPHONE_API_KEY=Get Key from QUO
-PHONE_NUMBER_ID=PNS7mc27hm
-BUSINESS_PHONE_NUMBER=+12245760059
-GPT_SHARED_SECRET=make-up-a-long-random-secret
-DATABASE_PATH=calls.db
-```
+POST /api/quo/schaumburg/sync-summaries
 
-## Run locally
+Fetches latest conversations and updates:
+- messages
+- call summaries
+- voicemails
 
-```bash
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
-```
+---
 
-Test:
+### Get Activity Feed
 
-```bash
-curl http://localhost:8000/health
-```
+GET /api/quo/schaumburg/activity
 
-## Webhook URL
+Returns:
 
-After deployment, add this URL in Quo/OpenPhone webhooks for call events such as `call.completed`, `call.transcript.completed`, and `call.summary.completed`:
+{
+  "activities": [
+    {
+      "phone_number": "+1234567890",
+      "last_activity_at": "...",
+      "messages": [...],
+      "call_summary": {...},
+      "voicemails": [...]
+    }
+  ]
+}
 
-```text
-https://YOUR-DOMAIN.com/webhooks/openphone
-```
+---
 
-## GPT wrapper URL
+### Debug Endpoints
 
-Your Custom GPT action should call:
+GET /api/quo/debug/messages/{phone}  
+GET /api/quo/debug/stored-messages/{phone}  
+GET /api/quo/debug/summaries  
+GET /api/quo/debug/voicemails  
 
-```text
-GET https://YOUR-DOMAIN.com/api/quo/schaumburg/last-10-calls
-```
+---
 
-Header:
+## Tech Stack
 
-```text
-X-Wrapper-Secret: your GPT_SHARED_SECRET
-```
+- FastAPI
+- SQLite (default) / Postgres (recommended for production)
+- OpenPhone (QUO) API
+- Python 3.10+
 
-## Optional manual seed endpoint
+---
 
-If you already know a call ID and want to test before webhooks are active:
+## Setup
 
-```bash
-curl -X POST \
-  -H "X-Wrapper-Secret: your GPT_SHARED_SECRET" \
-  https://YOUR-DOMAIN.com/api/quo/schaumburg/seed-call/ACCNe265680744a541c99388a4d3a7542223
-```
+### 1. Clone repo
 
-Then call:
+git clone https://github.com/cdorman1/kmfs_quo_wrapper.git  
+cd kmfs_quo_wrapper
 
-```bash
-curl -H "X-Wrapper-Secret: your GPT_SHARED_SECRET" \
-  https://YOUR-DOMAIN.com/api/quo/schaumburg/last-10-calls
-```
+---
+
+### 2. Create virtual environment
+
+python -m venv .venv  
+source .venv/bin/activate  
+
+---
+
+### 3. Install dependencies
+
+pip install -r requirements.txt  
+
+---
+
+### 4. Create `.env`
+
+QUO_API_KEY=your_api_key  
+PHONE_NUMBER_ID=your_phone_number_id  
+GPT_SHARED_SECRET=your_secret  
+MAX_CONVERSATIONS=10  
+
+---
+
+### 5. Run server
+
+uvicorn app:app --reload  
+
+Server runs at:
+
+http://127.0.0.1:8000
+
+---
+
+## Deployment (Recommended)
+
+### Render + Supabase
+
+- Deploy FastAPI as a Render Web Service
+- Use Supabase (free tier) for Postgres
+- Add environment variables in Render dashboard
+- Add a Render Cron Job:
+
+*/10 7-19 * * *
+
+Calls:
+
+POST /api/quo/schaumburg/sync-summaries
+
+---
+
+## Design Philosophy
+
+- Keep API calls minimal
+- Always maintain latest 10 active conversations
+- Avoid re-fetching existing summaries/voicemails
+- Store everything locally for fast retrieval
+
+---
+
+## Security
+
+- API key stored via environment variables
+- Optional shared secret header:
+  - x-wrapper-secret
+- .env is gitignored
+
+---
+
+## Future Improvements
+
+- Full Postgres migration
+- Pagination support
+- Webhook support (instead of polling)
+- Frontend dashboard
+- Analytics layer (lead tracking, conversion)
+
+---
+
+## Author
+
+Chris Dorman  
+Krav Maga Force Schaumburg
