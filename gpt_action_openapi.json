@@ -1,0 +1,61 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "KMF Schaumburg Call Wrapper",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://YOUR-DOMAIN.com"
+    }
+  ],
+  "paths": {
+    "/api/quo/schaumburg/last-10-calls": {
+      "get": {
+        "operationId": "getKmfSchaumburgLast10Calls",
+        "summary": "Get the last 10 Krav Maga Force Schaumburg calls",
+        "parameters": [
+          {
+            "name": "X-Wrapper-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last 10 calls formatted for GPT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "phone_number": { "type": "string" },
+                          "call_details": { "type": "string" },
+                          "call_id": { "type": "string" },
+                          "direction": { "type": "string" },
+                          "status": { "type": "string" },
+                          "created_at": { "type": "string" }
+                        },
+                        "required": ["name", "phone_number", "call_details"]
+                      }
+                    }
+                  },
+                  "required": ["calls"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
