@@ -146,6 +146,19 @@ app = FastAPI(
 )
 
 
+QUO_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="10" fill="#080807"/>
+  <path d="M22 15h20a6 6 0 0 1 6 6v22a6 6 0 0 1-6 6H24l-8 6v-8a6 6 0 0 1-4-6V21a6 6 0 0 1 6-6z" fill="#14120f" stroke="#c5a059" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M24 28h16M24 37h10" stroke="#f5efe4" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="45" cy="45" r="6" fill="#7b1f2a"/>
+</svg>"""
+
+
+@app.get("/favicon.svg")
+def favicon() -> Response:
+    return Response(QUO_FAVICON_SVG, media_type="image/svg+xml")
+
+
 def secret_matches(value: Optional[str]) -> bool:
     return bool(GPT_SHARED_SECRET and value and compare_digest(value, GPT_SHARED_SECRET))
 
@@ -379,6 +392,7 @@ def dashboard(request: Request) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>KMF Schaumburg QUO</title>
+  <link rel="icon" href="/quo-wrapper/favicon.svg?v=2" type="image/svg+xml">
   <style>
     :root { color-scheme: dark; --bg: #080807; --panel: rgba(18, 17, 15, 0.94); --line: rgba(197, 160, 89, 0.28); --text: #f5efe4; --muted: #9f9688; --accent: #d6b568; --danger: #a6383c; }
     * { box-sizing: border-box; }
