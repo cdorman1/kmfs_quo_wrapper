@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 import base64
+import html
 from hmac import compare_digest
 import json
 import os
@@ -289,11 +290,60 @@ def get_activity_payload(conn: sqlite3.Connection) -> Dict[str, Any]:
     return {"activities": activities}
 
 
+def render_activity_html(activity_payload: Dict[str, Any]) -> str:
+    activities = activity_payload.get("activities", [])
+    if not activities:
+        return '<div id="content" class="empty">No recent activity was found.</div>'
+
+    cards = []
+    for item in activities:
+        summary = item.get("call_summary") or {}
+        messages = item.get("messages") or []
+        message_items = "".join(
+            "<li><strong>{direction}:</strong> {text}<br><span class=\"meta\">{created_at}</span></li>".format(
+                direction=html.escape(message.get("direction") or "unknown"),
+                text=html.escape(message.get("text") or ""),
+                created_at=html.escape(message.get("created_at") or ""),
+            )
+            for message in messages[:5]
+            if message.get("text")
+        )
+        message_block = f"<ul>{message_items}</ul>" if message_items else "<p>None found</p>"
+
+        next_steps = summary.get("next_steps")
+        if not next_steps or next_steps == "None found":
+            next_steps = "Review the latest activity and follow up if no reply has been sent."
+
+        cards.append(
+            '<article class="card">'
+            '<span class="badge">Recent activity</span>'
+            '<h2><span class="field-label">Phone number:</span>{phone}</h2>'
+            '<div class="field"><span class="field-label">Last activity:</span><p>{last_activity}</p></div>'
+            '<div class="field"><span class="field-label">Messages:</span>{messages}</div>'
+            '<div class="field"><span class="field-label">Call summary:</span><p>{summary}</p></div>'
+            '<div class="field"><span class="field-label">Next steps:</span><p>{next_steps}</p></div>'
+            '</article>'.format(
+                phone=html.escape(item.get("phone_number") or "Unknown"),
+                last_activity=html.escape(item.get("last_activity_at") or "Unknown"),
+                messages=message_block,
+                summary=html.escape(summary.get("summary") or "None found"),
+                next_steps=html.escape(next_steps),
+            )
+        )
+
+    return (
+        '<div id="content" class="stack">'
+        '<section class="panel"><h2>Latest QUO activity</h2><div class="grid">'
+        + "".join(cards)
+        + '</div></section></div>'
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> str:
-    initial_activity_json = json.dumps(
-        get_activity_payload(request.app.state.db),
-    ).replace("</", "<\\/")
+    initial_activity = get_activity_payload(request.app.state.db)
+    initial_activity_json = json.dumps(initial_activity).replace("</", "<\\/")
+    initial_activity_html = render_activity_html(initial_activity)
 
     return """<!doctype html>
 <html lang="en">
@@ -337,7 +387,7 @@ def dashboard(request: Request) -> str:
 </head>
 <body>
   <header><h1>KMF Schaumburg QUO</h1><button id="sync" class="primary">Sync now</button></header>
-  <main><div class="toolbar"><button id="refresh">Refresh activity</button><span id="status" class="status"></span></div><div id="content" class="empty">Syncing activity...</div></main>
+  <main><div class="toolbar"><button id="refresh">Refresh activity</button><span id="status" class="status"></span></div>__INITIAL_CONTENT__</main>
   <script>
     const content = document.getElementById("content");
     const statusEl = document.getElementById("status");
@@ -434,7 +484,7 @@ def dashboard(request: Request) -> str:
     syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); render(initialActivity); syncAndLoadActivity();
   </script>
 </body>
-</html>""".replace("__INITIAL_ACTIVITY__", initial_activity_json)
+</html>""".replace("__INITIAL_ACTIVITY__", initial_activity_json).replace("__INITIAL_CONTENT__", initial_activity_html)
 
 
 def get_last_sync(conn):
