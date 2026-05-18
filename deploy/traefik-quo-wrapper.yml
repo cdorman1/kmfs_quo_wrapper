@@ -11,6 +11,15 @@ http:
         - quo-wrapper-strip-prefix
       service: quo-wrapper
 
+    quo-wrapper-api:
+      rule: Host(`sentinelforge.tech`) && PathPrefix(`/api/quo`)
+      priority: 1001
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: quo-wrapper
+
   middlewares:
     quo-wrapper-strip-prefix:
       stripPrefix:
