@@ -380,24 +380,24 @@ def dashboard(request: Request) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>KMF Schaumburg QUO</title>
   <style>
-    :root { color-scheme: dark; --bg: #0e1116; --panel: #171b22; --line: #2b3240; --text: #eef2f7; --muted: #99a4b3; --accent: #f2c94c; --danger: #ff6b6b; }
+    :root { color-scheme: dark; --bg: #080807; --panel: rgba(18, 17, 15, 0.94); --line: rgba(197, 160, 89, 0.28); --text: #f5efe4; --muted: #9f9688; --accent: #d6b568; --danger: #a6383c; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); }
-    h1 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: 0; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: linear-gradient(rgba(197, 160, 89, 0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(197, 160, 89, 0.018) 1px, transparent 1px), radial-gradient(circle at 20% 0%, rgba(197, 160, 89, 0.12), transparent 32vw), radial-gradient(circle at 82% 12%, rgba(123, 31, 42, 0.14), transparent 28vw), var(--bg); background-size: 34px 34px, 34px 34px, auto, auto, auto; color: var(--text); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(8, 8, 7, 0.96), rgba(15, 13, 11, 0.7)); box-shadow: 0 20px 70px rgba(0, 0, 0, 0.36); }
+    h1 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: 0; text-shadow: 0 16px 38px rgba(0, 0, 0, 0.72); }
     main { width: min(1180px, 100%); margin: 0 auto; padding: 24px clamp(16px, 4vw, 40px) 48px; }
-    button { border: 1px solid var(--line); background: #222936; color: var(--text); border-radius: 6px; padding: 10px 14px; font: inherit; cursor: pointer; }
+    button { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(31, 28, 23, 0.96), rgba(13, 12, 10, 0.88)); color: var(--text); border-radius: 6px; padding: 10px 14px; font: inherit; cursor: pointer; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #16130a; font-weight: 700; }
     button:disabled { opacity: .55; cursor: not-allowed; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
     .status { color: var(--muted); min-height: 24px; }
     .navlinks { display: flex; flex-wrap: wrap; gap: 10px; }
-    .navlinks a { border: 1px solid var(--line); background: #222936; color: var(--text); border-radius: 6px; padding: 10px 14px; text-decoration: none; }
+    .navlinks a { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(31, 28, 23, 0.96), rgba(13, 12, 10, 0.88)); color: var(--text); border-radius: 6px; padding: 10px 14px; text-decoration: none; }
     .navlinks a:hover { border-color: var(--accent); color: var(--accent); }
     .stack { display: grid; gap: 24px; }
     .panel h2 { font-size: 20px; margin: 0 0 12px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-    .card { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px; min-width: 0; }
+    .card { border: 1px solid var(--line); background: linear-gradient(135deg, rgba(197, 160, 89, 0.08), transparent 32%), linear-gradient(315deg, rgba(123, 31, 42, 0.08), transparent 34%), var(--panel); border-radius: 8px; padding: 16px; min-width: 0; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34), inset 0 0 34px rgba(197, 160, 89, 0.035); }
     .card h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0; overflow-wrap: anywhere; }
     .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; overflow-wrap: anywhere; }
     .section { margin-top: 12px; }
