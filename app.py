@@ -391,6 +391,9 @@ def dashboard(request: Request) -> str:
     button:disabled { opacity: .55; cursor: not-allowed; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
     .status { color: var(--muted); min-height: 24px; }
+    .navlinks { display: flex; flex-wrap: wrap; gap: 10px; }
+    .navlinks a { border: 1px solid var(--line); background: #222936; color: var(--text); border-radius: 6px; padding: 10px 14px; text-decoration: none; }
+    .navlinks a:hover { border-color: var(--accent); color: var(--accent); }
     .stack { display: grid; gap: 24px; }
     .panel h2 { font-size: 20px; margin: 0 0 12px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
@@ -414,7 +417,7 @@ def dashboard(request: Request) -> str:
   </style>
 </head>
 <body>
-  <header><h1>KMF Schaumburg QUO</h1><button id="sync" class="primary">Sync now</button></header>
+  <header><h1>KMF Schaumburg QUO</h1><div class="navlinks"><a href="/briefing/">Briefing</a><a href="/server-health/">Server Health</a><button id="sync" class="primary">Sync now</button></div></header>
   <main><div class="toolbar"><button id="refresh">Refresh activity</button><span id="status" class="status"></span></div>__INITIAL_CONTENT__</main>
   <script>
     const content = document.getElementById("content");
