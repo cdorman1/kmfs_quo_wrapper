@@ -218,8 +218,83 @@ def require_api_access(request: Request, x_wrapper_secret: Optional[str]) -> Non
     require_gpt_secret(x_wrapper_secret)
 
 
+def get_activity_payload(conn: sqlite3.Connection) -> Dict[str, Any]:
+    rows = conn.execute("""
+        SELECT
+            c.participant_number,
+            c.last_activity_id,
+            c.last_activity_at,
+            s.summary,
+            s.next_steps,
+            s.status
+        FROM conversations c
+        LEFT JOIN summaries s
+            ON s.last_activity_id = c.last_activity_id
+        ORDER BY c.last_activity_at DESC
+        LIMIT 10
+    """).fetchall()
+
+    participant_numbers = []
+    for row in rows:
+        participant_number = row["participant_number"]
+        if participant_number and participant_number not in participant_numbers:
+            participant_numbers.append(participant_number)
+
+    messages_by_participant = fetch_recent_messages_by_participant(
+        conn,
+        participant_numbers,
+    )
+    voicemails_by_participant = fetch_recent_voicemails_by_participant(
+        conn,
+        participant_numbers,
+    )
+
+    activities = []
+    for row in rows:
+        participant_number = row["participant_number"]
+        message_rows = messages_by_participant.get(participant_number, [])
+        voicemail_rows = voicemails_by_participant.get(participant_number, [])
+
+        activities.append({
+            "phone_number": participant_number,
+            "last_activity_at": row["last_activity_at"],
+            "messages": [
+                {
+                    "direction": msg["direction"] or "unknown",
+                    "text": msg["text"] or "",
+                    "created_at": msg["created_at"],
+                }
+                for msg in message_rows
+                if msg["text"]
+            ],
+            "call_summary": {
+                "status": row["status"] or "None found",
+                "summary": row["summary"] or "None found",
+                "next_steps": row["next_steps"] or "None found",
+            },
+            "voicemails": [
+                {
+                    "call_id": vm["call_id"],
+                    "phone_number_id": vm["phone_number_id"],
+                    "participant_phone_number": vm["participant_phone_number"],
+                    "participant_name": vm["participant_name"],
+                    "transcript": vm["transcript"],
+                    "recording_url": vm["recording_url"],
+                    "created_at": vm["created_at"],
+                }
+                for vm in voicemail_rows
+            ],
+        })
+
+    return {"activities": activities}
+
+
 @app.get("/", response_class=HTMLResponse)
-def dashboard() -> str:
+def dashboard(request: Request) -> str:
+    initial_activity_json = json.dumps(
+        get_activity_payload(request.app.state.db),
+    ).replace("</", "<\\/")
+
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -268,6 +343,7 @@ def dashboard() -> str:
     const statusEl = document.getElementById("status");
     const syncButton = document.getElementById("sync");
     const refreshButton = document.getElementById("refresh");
+    const initialActivity = __INITIAL_ACTIVITY__;
     function esc(value, fallback) {
       const text = value == null || value === "" ? (fallback || "None found") : String(value);
       return text.replace(/[&<>\"]/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]; });
@@ -354,11 +430,11 @@ def dashboard() -> str:
       ].join("");
     }
     async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
-    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
-    syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); syncAndLoadActivity();
+    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { statusEl.textContent = "Showing stored activity; sync failed"; if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; } } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
+    syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); render(initialActivity); syncAndLoadActivity();
   </script>
 </body>
-</html>"""
+</html>""".replace("__INITIAL_ACTIVITY__", initial_activity_json)
 
 
 def get_last_sync(conn):
@@ -1162,78 +1238,7 @@ def activity(
         x_wrapper_secret: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     require_api_access(request, x_wrapper_secret)
-
-    conn = request.app.state.db
-
-    rows = conn.execute("""
-        SELECT
-            c.participant_number,
-            c.last_activity_id,
-            c.last_activity_at,
-            s.summary,
-            s.next_steps,
-            s.status
-        FROM conversations c
-        LEFT JOIN summaries s
-            ON s.last_activity_id = c.last_activity_id
-        ORDER BY c.last_activity_at DESC
-        LIMIT 10
-    """).fetchall()
-
-    participant_numbers = []
-    for row in rows:
-        participant_number = row["participant_number"]
-        if participant_number and participant_number not in participant_numbers:
-            participant_numbers.append(participant_number)
-
-    messages_by_participant = fetch_recent_messages_by_participant(
-        conn,
-        participant_numbers,
-    )
-    voicemails_by_participant = fetch_recent_voicemails_by_participant(
-        conn,
-        participant_numbers,
-    )
-
-    activities = []
-
-    for row in rows:
-        participant_number = row["participant_number"]
-        message_rows = messages_by_participant.get(participant_number, [])
-        voicemail_rows = voicemails_by_participant.get(participant_number, [])
-
-        activities.append({
-            "phone_number": participant_number,
-            "last_activity_at": row["last_activity_at"],
-            "messages": [
-                {
-                    "direction": msg["direction"] or "unknown",
-                    "text": msg["text"] or "",
-                    "created_at": msg["created_at"],
-                }
-                for msg in message_rows
-                if msg["text"]
-            ],
-            "call_summary": {
-                "status": row["status"] or "None found",
-                "summary": row["summary"] or "None found",
-                "next_steps": row["next_steps"] or "None found",
-            },
-            "voicemails": [
-                {
-                    "call_id": vm["call_id"],
-                    "phone_number_id": vm["phone_number_id"],
-                    "participant_phone_number": vm["participant_phone_number"],
-                    "participant_name": vm["participant_name"],
-                    "transcript": vm["transcript"],
-                    "recording_url": vm["recording_url"],
-                    "created_at": vm["created_at"],
-                }
-                for vm in voicemail_rows
-            ],
-        })
-
-    return {"activities": activities}
+    return get_activity_payload(request.app.state.db)
 
 
 @app.exception_handler(HTTPException)
