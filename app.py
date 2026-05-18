@@ -146,8 +146,36 @@ app = FastAPI(
 )
 
 
+def secret_matches(value: Optional[str]) -> bool:
+    return bool(GPT_SHARED_SECRET and value and compare_digest(value, GPT_SHARED_SECRET))
+
+
+def bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+
+    scheme, separator, token = authorization.partition(" ")
+    if separator and scheme.lower() in {"bearer", "token", "apikey", "api-key"}:
+        return token.strip()
+
+    return authorization.strip()
+
+
+def request_has_wrapper_secret(request: Request) -> bool:
+    return any(
+        secret_matches(value)
+        for value in (
+            request.headers.get("x-wrapper-secret"),
+            request.headers.get("x-api-key"),
+            request.headers.get("api-key"),
+            bearer_token(request.headers.get("authorization")),
+            request.query_params.get("x-wrapper-secret"),
+        )
+    )
+
+
 def require_gpt_secret(x_wrapper_secret: Optional[str]) -> None:
-    if GPT_SHARED_SECRET and x_wrapper_secret != GPT_SHARED_SECRET:
+    if GPT_SHARED_SECRET and not secret_matches(x_wrapper_secret):
         raise HTTPException(status_code=401, detail="Invalid wrapper secret")
 
 
@@ -170,7 +198,7 @@ BASIC_CREDENTIALS = load_basic_credentials()
 
 
 def valid_wrapper_secret(x_wrapper_secret: Optional[str]) -> bool:
-    return bool(GPT_SHARED_SECRET and x_wrapper_secret == GPT_SHARED_SECRET)
+    return secret_matches(x_wrapper_secret)
 
 
 def valid_basic_auth(authorization: Optional[str]) -> bool:
@@ -197,7 +225,7 @@ async def require_public_auth(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
 
-    if valid_wrapper_secret(request.headers.get("x-wrapper-secret")):
+    if request_has_wrapper_secret(request):
         request.state.authenticated_by = "wrapper-secret"
         return await call_next(request)
 
@@ -214,7 +242,7 @@ async def require_public_auth(request: Request, call_next):
 
 
 def require_api_access(request: Request, x_wrapper_secret: Optional[str]) -> None:
-    if getattr(request.state, "authenticated_by", None) == "basic":
+    if getattr(request.state, "authenticated_by", None) in {"basic", "wrapper-secret"}:
         return
     require_gpt_secret(x_wrapper_secret)
 
