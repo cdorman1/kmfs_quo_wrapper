@@ -1,2 +1,9 @@
 .env
 .idea/
+
+__pycache__/
+pycache/
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
