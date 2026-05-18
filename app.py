@@ -1,16 +1,19 @@
 from dotenv import load_dotenv
 
 load_dotenv()
+import base64
+from hmac import compare_digest
 import json
 import os
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 QUO_BASE_URL = os.getenv("QUO_BASE_URL", "https://api.openphone.com")
 QUO_API_KEY = os.getenv("QUO_API_KEY")
@@ -28,6 +31,10 @@ DATABASE_PATH = os.getenv("DATABASE_PATH") or "summaries.db"
 MAX_CONVERSATIONS = int(os.getenv("MAX_CONVERSATIONS", "25"))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
 HTTP_SESSION = requests.Session()
+BASIC_AUTH_FILE = os.getenv(
+    "QUO_BASIC_AUTH_FILE",
+    "/root/.openclaw/workspace/dashboards/.dashboard-auth.json",
+)
 
 print("QUO_API_KEY loaded:", bool(QUO_API_KEY))
 
@@ -141,6 +148,139 @@ app = FastAPI(
 def require_gpt_secret(x_wrapper_secret: Optional[str]) -> None:
     if GPT_SHARED_SECRET and x_wrapper_secret != GPT_SHARED_SECRET:
         raise HTTPException(status_code=401, detail="Invalid wrapper secret")
+
+
+def load_basic_credentials() -> Optional[dict[str, str]]:
+    username = os.getenv("QUO_BASIC_USER") or os.getenv("DASHBOARD_USER")
+    password = os.getenv("QUO_BASIC_PASSWORD") or os.getenv("DASHBOARD_PASSWORD")
+    if username and password:
+        return {"username": username, "password": password}
+
+    auth_path = Path(BASIC_AUTH_FILE)
+    if auth_path.exists():
+        data = json.loads(auth_path.read_text(encoding="utf-8"))
+        if data.get("username") and data.get("password"):
+            return {"username": data["username"], "password": data["password"]}
+
+    return None
+
+
+BASIC_CREDENTIALS = load_basic_credentials()
+
+
+def valid_wrapper_secret(x_wrapper_secret: Optional[str]) -> bool:
+    return bool(GPT_SHARED_SECRET and x_wrapper_secret == GPT_SHARED_SECRET)
+
+
+def valid_basic_auth(authorization: Optional[str]) -> bool:
+    if not BASIC_CREDENTIALS or not authorization or not authorization.startswith("Basic "):
+        return False
+
+    try:
+        decoded = base64.b64decode(authorization[6:]).decode("utf-8")
+    except Exception:
+        return False
+
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return False
+
+    return (
+        compare_digest(username, BASIC_CREDENTIALS["username"])
+        and compare_digest(password, BASIC_CREDENTIALS["password"])
+    )
+
+
+@app.middleware("http")
+async def require_public_auth(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    if valid_wrapper_secret(request.headers.get("x-wrapper-secret")):
+        request.state.authenticated_by = "wrapper-secret"
+        return await call_next(request)
+
+    if valid_basic_auth(request.headers.get("authorization")):
+        request.state.authenticated_by = "basic"
+        return await call_next(request)
+
+    return Response(
+        "Authentication required\n",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="KMF Schaumburg QUO", charset="UTF-8"'},
+        media_type="text/plain",
+    )
+
+
+def require_api_access(request: Request, x_wrapper_secret: Optional[str]) -> None:
+    if getattr(request.state, "authenticated_by", None) == "basic":
+        return
+    require_gpt_secret(x_wrapper_secret)
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KMF Schaumburg QUO</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0e1116; --panel: #171b22; --line: #2b3240; --text: #eef2f7; --muted: #99a4b3; --accent: #f2c94c; --danger: #ff6b6b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); }
+    h1 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: 0; }
+    main { width: min(1180px, 100%); margin: 0 auto; padding: 24px clamp(16px, 4vw, 40px) 48px; }
+    button { border: 1px solid var(--line); background: #222936; color: var(--text); border-radius: 6px; padding: 10px 14px; font: inherit; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #16130a; font-weight: 700; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+    .status { color: var(--muted); min-height: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+    .card { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px; min-width: 0; }
+    .card h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0; overflow-wrap: anywhere; }
+    .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; overflow-wrap: anywhere; }
+    .section { margin-top: 12px; }
+    .label { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    p { margin: 6px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
+    ul { margin: 6px 0 0; padding-left: 18px; }
+    li { margin: 4px 0; line-height: 1.4; overflow-wrap: anywhere; }
+    .empty, .error { border: 1px solid var(--line); border-radius: 8px; padding: 18px; color: var(--muted); background: var(--panel); }
+    .error { color: var(--danger); border-color: var(--danger); }
+  </style>
+</head>
+<body>
+  <header><h1>KMF Schaumburg QUO</h1><button id="sync" class="primary">Sync activity</button></header>
+  <main><div class="toolbar"><button id="refresh">Refresh</button><span id="status" class="status"></span></div><div id="content" class="empty">Loading activity...</div></main>
+  <script>
+    const content = document.getElementById("content");
+    const statusEl = document.getElementById("status");
+    const syncButton = document.getElementById("sync");
+    const refreshButton = document.getElementById("refresh");
+    function esc(value, fallback) {
+      const text = value == null || value === "" ? (fallback || "None found") : String(value);
+      return text.replace(/[&<>\"]/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]; });
+    }
+    function render(data) {
+      const activities = data.activities || [];
+      if (!activities.length) { content.className = "empty"; content.textContent = "No activity has been synced yet."; return; }
+      content.className = "grid";
+      content.innerHTML = activities.map(function(item) {
+        const messages = (item.messages || []).slice(0, 5).map(function(msg) { return "<li><strong>" + esc(msg.direction, "unknown") + ":</strong> " + esc(msg.text, "") + "<br><span class=\"meta\">" + esc(msg.created_at, "") + "</span></li>"; }).join("");
+        const voicemails = (item.voicemails || []).map(function(vm) { return "<li>" + esc(vm.transcript) + "<br><span class=\"meta\">" + esc(vm.created_at, "") + "</span></li>"; }).join("");
+        const summary = item.call_summary || {};
+        return "<article class=\"card\"><h2>" + esc(item.phone_number, "Unknown") + "</h2><div class=\"meta\">Last activity: " + esc(item.last_activity_at, "Unknown") + "</div><div class=\"section\"><div class=\"label\">Call summary</div><p>" + esc(summary.summary) + "</p></div><div class=\"section\"><div class=\"label\">Next steps</div><p>" + esc(summary.next_steps) + "</p></div><div class=\"section\"><div class=\"label\">Messages</div>" + (messages ? "<ul>" + messages + "</ul>" : "<p>None found</p>") + "</div><div class=\"section\"><div class=\"label\">Voicemails</div>" + (voicemails ? "<ul>" + voicemails + "</ul>" : "<p>None found</p>") + "</div></article>";
+      }).join("");
+    }
+    async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
+    async function loadActivity() { statusEl.textContent = "Loading..."; try { render(await request("api/quo/schaumburg/activity")); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } }
+    async function syncActivity() { syncButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request("api/quo/schaumburg/sync-activity", { method: "POST" }); await loadActivity(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Sync failed"; } finally { syncButton.disabled = false; } }
+    syncButton.addEventListener("click", syncActivity); refreshButton.addEventListener("click", loadActivity); loadActivity();
+  </script>
+</body>
+</html>"""
 
 
 def get_last_sync(conn):
@@ -754,7 +894,7 @@ def sync_activity(
         request: Request,
         x_wrapper_secret: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
-    require_gpt_secret(x_wrapper_secret)
+    require_api_access(request, x_wrapper_secret)
 
     conn = request.app.state.db
     result = sync_latest_activity(conn)
@@ -767,7 +907,7 @@ def last_10_calls(
         request: Request,
         x_wrapper_secret: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
-    require_gpt_secret(x_wrapper_secret)
+    require_api_access(request, x_wrapper_secret)
 
     conn = request.app.state.db
 
@@ -800,7 +940,7 @@ def simple_calls(
         request: Request,
         x_wrapper_secret: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
-    require_gpt_secret(x_wrapper_secret)
+    require_api_access(request, x_wrapper_secret)
 
     conn = request.app.state.db
 
@@ -943,7 +1083,7 @@ def activity(
         request: Request,
         x_wrapper_secret: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
-    require_gpt_secret(x_wrapper_secret)
+    require_api_access(request, x_wrapper_secret)
 
     conn = request.app.state.db
 

@@ -113,18 +113,46 @@ http://127.0.0.1:8000
 
 ## Deployment (Recommended)
 
-### Render + Supabase
+### Sentinel Forge / Hostinger Domain
 
-- Deploy FastAPI as a Render Web Service
-- Use Supabase (free tier) for Postgres
-- Add environment variables in Render dashboard
-- Add a Render Cron Job:
+This app can run on the same server as the existing Sentinel Forge dashboards and be exposed through Hostinger-managed DNS at:
 
-*/10 7-19 * * *
+    https://sentinelforge.tech/quo-wrapper/
 
-Calls:
+The included deployment files are:
 
-POST /api/quo/schaumburg/sync-summaries
+    deploy/quo-wrapper.service
+    deploy/quo-wrapper.env.example
+    deploy/traefik-quo-wrapper.yml
+
+Production setup:
+
+    sudo mkdir -p /opt/quo-wrapper /var/lib/quo-wrapper
+    sudo rsync -a --delete ./ /opt/quo-wrapper/
+    cd /opt/quo-wrapper
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    sudo cp deploy/quo-wrapper.env.example /etc/quo-wrapper.env
+    sudo nano /etc/quo-wrapper.env
+    sudo cp deploy/quo-wrapper.service /etc/systemd/system/quo-wrapper.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now quo-wrapper
+
+Traefik setup:
+
+    sudo cp deploy/traefik-quo-wrapper.yml /docker/traefik/dynamic/quo-wrapper.yml
+
+The service listens only on localhost port 8788. Traefik strips the /quo-wrapper prefix and forwards traffic to FastAPI.
+
+Browser access uses HTTP Basic Auth. By default it reuses:
+
+    /root/.openclaw/workspace/dashboards/.dashboard-auth.json
+
+The existing x-wrapper-secret header still works for API callers when GPT_SHARED_SECRET is set.
+
+Optional cron sync:
+
+    */10 7-19 * * * curl -fsS -X POST -H "x-wrapper-secret: $GPT_SHARED_SECRET" https://sentinelforge.tech/quo-wrapper/api/quo/schaumburg/sync-activity >/dev/null
 
 ---
 

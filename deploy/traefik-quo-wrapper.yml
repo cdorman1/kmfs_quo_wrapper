@@ -1,0 +1,24 @@
+http:
+  routers:
+    quo-wrapper:
+      rule: Host(`sentinelforge.tech`) && PathPrefix(`/quo-wrapper`)
+      priority: 1000
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - quo-wrapper-strip-prefix
+      service: quo-wrapper
+
+  middlewares:
+    quo-wrapper-strip-prefix:
+      stripPrefix:
+        prefixes:
+          - /quo-wrapper
+
+  services:
+    quo-wrapper:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:8788

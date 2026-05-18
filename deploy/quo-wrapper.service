@@ -1,0 +1,17 @@
+[Unit]
+Description=KMF Schaumburg QUO wrapper web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/quo-wrapper
+EnvironmentFile=/etc/quo-wrapper.env
+ExecStart=/opt/quo-wrapper/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8788
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
