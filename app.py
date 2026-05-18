@@ -348,9 +348,9 @@ def dashboard() -> str:
       const today = activities.filter(function(item) { return isToday(item.last_activity_at); });
       content.className = "stack";
       content.innerHTML = [
+        sectionHtml("Latest QUO activity", activities, "No recent activity was found."),
         sectionHtml("Today's activity", today, "No activity found for today."),
         suggestionsHtml(activities),
-        sectionHtml("Latest QUO activity", activities, "No recent activity was found.")
       ].join("");
     }
     async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
