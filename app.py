@@ -263,6 +263,11 @@ def dashboard() -> str:
       const text = value == null || value === "" ? (fallback || "None found") : String(value);
       return text.replace(/[&<>\"]/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]; });
     }
+    function apiPath(path) {
+      const mountPath = window.location.pathname.split("/").filter(Boolean)[0];
+      const prefix = mountPath ? "/" + mountPath : "";
+      return prefix + path;
+    }
     function render(data) {
       const activities = data.activities || [];
       if (!activities.length) { content.className = "empty"; content.textContent = "No activity has been synced yet."; return; }
@@ -275,8 +280,8 @@ def dashboard() -> str:
       }).join("");
     }
     async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
-    async function loadActivity() { statusEl.textContent = "Loading..."; try { render(await request("api/quo/schaumburg/activity")); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } }
-    async function syncActivity() { syncButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request("api/quo/schaumburg/sync-activity", { method: "POST" }); await loadActivity(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Sync failed"; } finally { syncButton.disabled = false; } }
+    async function loadActivity() { statusEl.textContent = "Loading..."; try { render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } }
+    async function syncActivity() { syncButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); await loadActivity(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Sync failed"; } finally { syncButton.disabled = false; } }
     syncButton.addEventListener("click", syncActivity); refreshButton.addEventListener("click", loadActivity); loadActivity();
   </script>
 </body>
