@@ -238,12 +238,16 @@ def dashboard() -> str:
     button:disabled { opacity: .55; cursor: not-allowed; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
     .status { color: var(--muted); min-height: 24px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
     .card { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px; min-width: 0; }
     .card h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0; overflow-wrap: anywhere; }
     .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; overflow-wrap: anywhere; }
     .section { margin-top: 12px; }
     .label { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .field { margin-top: 12px; }
+    .field-label { color: var(--accent); display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+    .badge { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); display: inline-block; font-size: 12px; font-weight: 700; margin-bottom: 10px; padding: 4px 8px; text-transform: uppercase; }
+    .badge.hot { border-color: var(--accent); color: var(--accent); }
     p { margin: 6px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
     ul { margin: 6px 0 0; padding-left: 18px; }
     li { margin: 4px 0; line-height: 1.4; overflow-wrap: anywhere; }
@@ -252,8 +256,8 @@ def dashboard() -> str:
   </style>
 </head>
 <body>
-  <header><h1>KMF Schaumburg QUO</h1><button id="sync" class="primary">Sync activity</button></header>
-  <main><div class="toolbar"><button id="refresh">Refresh</button><span id="status" class="status"></span></div><div id="content" class="empty">Loading activity...</div></main>
+  <header><h1>KMF Schaumburg QUO</h1><button id="sync" class="primary">Sync now</button></header>
+  <main><div class="toolbar"><button id="refresh">Refresh activity</button><span id="status" class="status"></span></div><div id="content" class="empty">Syncing activity...</div></main>
   <script>
     const content = document.getElementById("content");
     const statusEl = document.getElementById("status");
@@ -268,21 +272,63 @@ def dashboard() -> str:
       const prefix = mountPath ? "/" + mountPath : "";
       return prefix + path;
     }
+    function missing(value) {
+      return value == null || value === "" || value === "None found";
+    }
+    function allText(item) {
+      const summary = item.call_summary || {};
+      const messages = (item.messages || []).map(function(msg) { return msg.text || ""; }).join(" ");
+      const voicemails = (item.voicemails || []).map(function(vm) { return vm.transcript || ""; }).join(" ");
+      return [summary.summary, summary.next_steps, messages, voicemails].filter(Boolean).join(" ").toLowerCase();
+    }
+    function priorityScore(item) {
+      const text = allText(item);
+      const rules = [
+        ["trial", 40], ["free class", 40], ["free trial", 45], ["book", 25], ["schedule", 25],
+        ["price", 35], ["pricing", 35], ["membership", 35], ["cost", 30], ["month", 20],
+        ["private", 35], ["training", 25], ["missed", 30], ["call back", 30], ["callback", 30],
+        ["lead", 25], ["interested", 25], ["urgent", 45], ["student", 15], ["member", 15]
+      ];
+      return rules.reduce(function(score, rule) {
+        return score + (text.indexOf(rule[0]) >= 0 ? rule[1] : 0);
+      }, 0);
+    }
+    function priorityLabel(item) {
+      const score = priorityScore(item);
+      if (score >= 60) return "Hot lead";
+      if (score >= 30) return "Follow-up";
+      return "Recent activity";
+    }
+    function inferredNextStep(item) {
+      const summary = item.call_summary || {};
+      if (!missing(summary.next_steps)) return summary.next_steps;
+      const text = allText(item);
+      if (text.indexOf("trial") >= 0 || text.indexOf("free class") >= 0) return "Follow up to book the free trial lesson.";
+      if (text.indexOf("price") >= 0 || text.indexOf("pricing") >= 0 || text.indexOf("membership") >= 0 || text.indexOf("cost") >= 0) return "Follow up with membership options and offer a trial lesson.";
+      if (text.indexOf("private") >= 0 || text.indexOf("training") >= 0) return "Follow up about private training availability and goals.";
+      if ((item.messages || []).length || (item.voicemails || []).length) return "Review the latest message and respond if no reply has been sent.";
+      return "Call back to confirm what they need and offer the next available trial lesson.";
+    }
     function render(data) {
-      const activities = data.activities || [];
-      if (!activities.length) { content.className = "empty"; content.textContent = "No activity has been synced yet."; return; }
+      const activities = (data.activities || []).slice().sort(function(a, b) {
+        const priority = priorityScore(b) - priorityScore(a);
+        if (priority) return priority;
+        return String(b.last_activity_at || "").localeCompare(String(a.last_activity_at || ""));
+      });
+      if (!activities.length) { content.className = "empty"; content.textContent = "No recent activity was found."; return; }
       content.className = "grid";
       content.innerHTML = activities.map(function(item) {
-        const messages = (item.messages || []).slice(0, 5).map(function(msg) { return "<li><strong>" + esc(msg.direction, "unknown") + ":</strong> " + esc(msg.text, "") + "<br><span class=\"meta\">" + esc(msg.created_at, "") + "</span></li>"; }).join("");
-        const voicemails = (item.voicemails || []).map(function(vm) { return "<li>" + esc(vm.transcript) + "<br><span class=\"meta\">" + esc(vm.created_at, "") + "</span></li>"; }).join("");
         const summary = item.call_summary || {};
-        return "<article class=\"card\"><h2>" + esc(item.phone_number, "Unknown") + "</h2><div class=\"meta\">Last activity: " + esc(item.last_activity_at, "Unknown") + "</div><div class=\"section\"><div class=\"label\">Call summary</div><p>" + esc(summary.summary) + "</p></div><div class=\"section\"><div class=\"label\">Next steps</div><p>" + esc(summary.next_steps) + "</p></div><div class=\"section\"><div class=\"label\">Messages</div>" + (messages ? "<ul>" + messages + "</ul>" : "<p>None found</p>") + "</div><div class=\"section\"><div class=\"label\">Voicemails</div>" + (voicemails ? "<ul>" + voicemails + "</ul>" : "<p>None found</p>") + "</div></article>";
+        const messages = (item.messages || []).slice(0, 5).map(function(msg) { return "<li><strong>" + esc(msg.direction, "unknown") + ":</strong> " + esc(msg.text, "") + "<br><span class=\"meta\">" + esc(msg.created_at, "") + "</span></li>"; }).join("");
+        const voicemailText = (item.voicemails || []).map(function(vm) { return vm.transcript; }).filter(Boolean).join(" ");
+        const messageBlock = messages ? "<ul>" + messages + "</ul>" : (voicemailText ? "<p>" + esc(voicemailText) + "</p>" : "<p>None found</p>");
+        const label = priorityLabel(item);
+        return "<article class=\"card\"><span class=\"badge " + (label === "Hot lead" ? "hot" : "") + "\">" + esc(label) + "</span><h2><span class=\"field-label\">Phone number:</span>" + esc(item.phone_number, "Unknown") + "</h2><div class=\"field\"><span class=\"field-label\">Last activity:</span><p>" + esc(item.last_activity_at, "Unknown") + "</p></div><div class=\"field\"><span class=\"field-label\">Messages:</span>" + messageBlock + "</div><div class=\"field\"><span class=\"field-label\">Call summary:</span><p>" + esc(summary.summary) + "</p></div><div class=\"field\"><span class=\"field-label\">Next steps:</span><p>" + esc(inferredNextStep(item)) + "</p></div></article>";
       }).join("");
     }
     async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
-    async function loadActivity() { statusEl.textContent = "Loading..."; try { render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } }
-    async function syncActivity() { syncButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); await loadActivity(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Sync failed"; } finally { syncButton.disabled = false; } }
-    syncButton.addEventListener("click", syncActivity); refreshButton.addEventListener("click", loadActivity); loadActivity();
+    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { content.className = "error"; content.textContent = error.message; statusEl.textContent = "Load failed"; } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
+    syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); syncAndLoadActivity();
   </script>
 </body>
 </html>"""
