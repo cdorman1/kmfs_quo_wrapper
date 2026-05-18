@@ -399,9 +399,7 @@ def dashboard(request: Request) -> str:
       return text.replace(/[&<>\"]/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]; });
     }
     function apiPath(path) {
-      const mountPath = window.location.pathname.split("/").filter(Boolean)[0];
-      const prefix = mountPath ? "/" + mountPath : "";
-      return prefix + path;
+      return path;
     }
     function missing(value) {
       return value == null || value === "" || value === "None found";
@@ -479,8 +477,8 @@ def dashboard(request: Request) -> str:
         suggestionsHtml(activities),
       ].join("");
     }
-    async function request(path, options) { const response = await fetch(path, options); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
-    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { statusEl.textContent = "Showing stored activity; sync failed"; if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; } } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
+    async function request(path, options) { const response = await fetch(path, Object.assign({ credentials: "same-origin", cache: "no-store" }, options || {})); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
+    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { statusEl.textContent = "Showing stored activity; sync failed: " + error.message; if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; } } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
     syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); render(initialActivity); syncAndLoadActivity();
   </script>
 </body>
