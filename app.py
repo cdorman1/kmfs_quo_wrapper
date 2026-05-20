@@ -514,6 +514,9 @@ def dashboard(request: Request) -> str:
     }
     function render(data) {
       const activities = (data.activities || []).slice().sort(function(a, b) {
+        return String(b.last_activity_at || "").localeCompare(String(a.last_activity_at || ""));
+      });
+      const prioritizedActivities = activities.slice().sort(function(a, b) {
         const priority = priorityScore(b) - priorityScore(a);
         if (priority) return priority;
         return String(b.last_activity_at || "").localeCompare(String(a.last_activity_at || ""));
@@ -524,7 +527,7 @@ def dashboard(request: Request) -> str:
       content.innerHTML = [
         sectionHtml("Latest QUO activity", activities, "No recent activity was found."),
         sectionHtml("Today's activity", today, "No activity found for today."),
-        suggestionsHtml(activities),
+        suggestionsHtml(prioritizedActivities),
       ].join("");
     }
     async function request(path, options) { const response = await fetch(path, Object.assign({ credentials: "same-origin", cache: "no-store" }, options || {})); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
