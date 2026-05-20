@@ -441,7 +441,12 @@ def dashboard(request: Request) -> str:
     const initialActivity = __INITIAL_ACTIVITY__;
     function esc(value, fallback) {
       const text = value == null || value === "" ? (fallback || "None found") : String(value);
-      return text.replace(/[&<>\"]/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]; });
+      return text.replace(/[&<>"]/g, function(ch) {
+        if (ch === "&") return "&amp;";
+        if (ch === "<") return "&lt;";
+        if (ch === ">") return "&gt;";
+        return "&quot;";
+      });
     }
     function apiPath(path) {
       return path;
@@ -492,20 +497,20 @@ def dashboard(request: Request) -> str:
     }
     function cardHtml(item) {
       const summary = item.call_summary || {};
-      const messages = (item.messages || []).slice(0, 5).map(function(msg) { return "<li><strong>" + esc(msg.direction, "unknown") + ":</strong> " + esc(msg.text, "") + "<br><span class=\"meta\">" + esc(msg.created_at, "") + "</span></li>"; }).join("");
+      const messages = (item.messages || []).slice(0, 5).map(function(msg) { return "<li><strong>" + esc(msg.direction, "unknown") + ":</strong> " + esc(msg.text, "") + "<br><span class='meta'>" + esc(msg.created_at, "") + "</span></li>"; }).join("");
       const voicemailText = (item.voicemails || []).map(function(vm) { return vm.transcript; }).filter(Boolean).join(" ");
       const messageBlock = messages ? "<ul>" + messages + "</ul>" : (voicemailText ? "<p>" + esc(voicemailText) + "</p>" : "<p>None found</p>");
       const label = priorityLabel(item);
-      return "<article class=\"card\"><span class=\"badge " + (label === "Hot lead" ? "hot" : "") + "\">" + esc(label) + "</span><h2><span class=\"field-label\">Phone number:</span>" + esc(item.phone_number, "Unknown") + "</h2><div class=\"field\"><span class=\"field-label\">Last activity:</span><p>" + esc(item.last_activity_at, "Unknown") + "</p></div><div class=\"field\"><span class=\"field-label\">Messages:</span>" + messageBlock + "</div><div class=\"field\"><span class=\"field-label\">Call summary:</span><p>" + esc(summary.summary) + "</p></div><div class=\"field\"><span class=\"field-label\">Next steps:</span><p>" + esc(inferredNextStep(item)) + "</p></div></article>";
+      return "<article class='card'><span class='badge " + (label === "Hot lead" ? "hot" : "") + "'>" + esc(label) + "</span><h2><span class='field-label'>Phone number:</span>" + esc(item.phone_number, "Unknown") + "</h2><div class='field'><span class='field-label'>Last activity:</span><p>" + esc(item.last_activity_at, "Unknown") + "</p></div><div class='field'><span class='field-label'>Messages:</span>" + messageBlock + "</div><div class='field'><span class='field-label'>Call summary:</span><p>" + esc(summary.summary) + "</p></div><div class='field'><span class='field-label'>Next steps:</span><p>" + esc(inferredNextStep(item)) + "</p></div></article>";
     }
     function sectionHtml(title, items, emptyText) {
-      return "<section class=\"panel\"><h2>" + esc(title) + "</h2>" + (items.length ? "<div class=\"grid\">" + items.map(cardHtml).join("") + "</div>" : "<div class=\"empty\">" + esc(emptyText) + "</div>") + "</section>";
+      return "<section class='panel'><h2>" + esc(title) + "</h2>" + (items.length ? "<div class='grid'>" + items.map(cardHtml).join("") + "</div>" : "<div class='empty'>" + esc(emptyText) + "</div>") + "</section>";
     }
     function suggestionsHtml(items) {
       const suggestions = items.filter(function(item) {
         return priorityScore(item) >= 30 || missing((item.call_summary || {}).next_steps);
       }).slice(0, 8);
-      return "<section class=\"panel\"><h2>Follow-up suggestions</h2>" + (suggestions.length ? "<div class=\"suggestions\">" + suggestions.map(function(item) { return "<div class=\"suggestion\"><strong>" + esc(item.phone_number, "Unknown") + "</strong><p>" + esc(inferredNextStep(item)) + "</p></div>"; }).join("") + "</div>" : "<div class=\"empty\">No follow-up suggestions found.</div>") + "</section>";
+      return "<section class='panel'><h2>Follow-up suggestions</h2>" + (suggestions.length ? "<div class='suggestions'>" + suggestions.map(function(item) { return "<div class='suggestion'><strong>" + esc(item.phone_number, "Unknown") + "</strong><p>" + esc(inferredNextStep(item)) + "</p></div>"; }).join("") + "</div>" : "<div class='empty'>No follow-up suggestions found.</div>") + "</section>";
     }
     function render(data) {
       const activities = (data.activities || []).slice().sort(function(a, b) {
@@ -523,8 +528,39 @@ def dashboard(request: Request) -> str:
       ].join("");
     }
     async function request(path, options) { const response = await fetch(path, Object.assign({ credentials: "same-origin", cache: "no-store" }, options || {})); if (!response.ok) throw new Error(await response.text() || String(response.status)); return response.json(); }
-    async function syncAndLoadActivity() { syncButton.disabled = true; refreshButton.disabled = true; statusEl.textContent = "Syncing from OpenPhone..."; try { await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" }); statusEl.textContent = "Loading activity..."; render(await request(apiPath("/api/quo/schaumburg/activity"))); statusEl.textContent = "Updated " + new Date().toLocaleString(); } catch (error) { statusEl.textContent = "Showing stored activity; sync failed: " + error.message; if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; } } finally { syncButton.disabled = false; refreshButton.disabled = false; } }
-    syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", syncAndLoadActivity); render(initialActivity); syncAndLoadActivity();
+    function setButtonsDisabled(disabled) { syncButton.disabled = disabled; refreshButton.disabled = disabled; }
+    async function loadActivity(statusPrefix) {
+      statusEl.textContent = "Loading activity...";
+      const data = await request(apiPath("/api/quo/schaumburg/activity"));
+      render(data);
+      statusEl.textContent = (statusPrefix || "Updated") + " " + new Date().toLocaleString();
+    }
+    async function refreshActivity() {
+      setButtonsDisabled(true);
+      try {
+        await loadActivity("Refreshed");
+      } catch (error) {
+        statusEl.textContent = "Refresh failed: " + error.message;
+        if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; }
+      } finally {
+        setButtonsDisabled(false);
+      }
+    }
+    async function syncAndLoadActivity() {
+      setButtonsDisabled(true);
+      statusEl.textContent = "Syncing from OpenPhone...";
+      try {
+        await request(apiPath("/api/quo/schaumburg/sync-activity"), { method: "POST" });
+        await loadActivity("Synced");
+      } catch (error) {
+        statusEl.textContent = "Showing stored activity; sync failed: " + error.message;
+        try { await loadActivity("Loaded stored activity"); } catch (_) {}
+        if (!content.innerHTML) { content.className = "error"; content.textContent = error.message; }
+      } finally {
+        setButtonsDisabled(false);
+      }
+    }
+    syncButton.addEventListener("click", syncAndLoadActivity); refreshButton.addEventListener("click", refreshActivity); render(initialActivity); refreshActivity();
   </script>
 </body>
 </html>""".replace("__INITIAL_ACTIVITY__", initial_activity_json).replace("__INITIAL_CONTENT__", initial_activity_html)
