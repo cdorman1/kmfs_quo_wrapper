@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Python sources
+        run: python -m compileall -q .
+
+      - name: Check JSON files
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for path in Path(".").rglob("*.json"):
+              if ".git" in path.parts:
+                  continue
+              with path.open(encoding="utf-8") as handle:
+                  json.load(handle)
+          PY
+
+      - name: Check for committed secret values
+        run: |
+          python - <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          patterns = [
+              re.compile("sk-" + r"[A-Za-z0-9_-]{20,}"),
+              re.compile("AKIA" + r"[0-9A-Z]{16}"),
+              re.compile("BEGIN " + r"[A-Z ]*PRIVATE KEY"),
+              re.compile("QUO_API_" + r"KEY=[^\s]{12,}"),
+              re.compile("GPT_SHARED_" + r"SECRET=[^\s]{12,}"),
+          ]
+          excluded_suffixes = {".png", ".jpg", ".jpeg", ".pdf"}
+          hits = []
+          for path in Path(".").rglob("*"):
+              if not path.is_file() or ".git" in path.parts or path.suffix.lower() in excluded_suffixes:
+                  continue
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  if any(pattern.search(line) for pattern in patterns):
+                      hits.append(f"{path}:{line_number}")
+          if hits:
+              print("Potential committed secret values found:")
+              print("\n".join(hits))
+              sys.exit(1)
+          PY
