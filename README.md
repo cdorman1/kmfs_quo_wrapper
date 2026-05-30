@@ -1,5 +1,9 @@
 # KMFS QUO Wrapper
 
+Status: public source repository for a private/internal FastAPI integration. Do not
+commit live API keys, shared secrets, auth files, database files, logs, or exported
+customer/conversation data.
+
 Lightweight FastAPI service that integrates with the OpenPhone (QUO) API to aggregate conversations, messages, call summaries, and voicemails into a single structured endpoint.
 
 Designed to power internal tooling and GPT-based workflows for Krav Maga Force Schaumburg.
@@ -94,10 +98,24 @@ pip install -r requirements.txt
 
 ### 4. Create `.env`
 
-QUO_API_KEY=your_api_key  
-PHONE_NUMBER_ID=your_phone_number_id  
-GPT_SHARED_SECRET=your_secret  
-MAX_CONVERSATIONS=10  
+Copy the example file and replace placeholder values with deployment-local
+secrets:
+
+```bash
+cp deploy/quo-wrapper.env.example .env
+```
+
+Required values:
+
+```dotenv
+QUO_API_KEY=replace-me
+PHONE_NUMBER_ID=replace-me
+GPT_SHARED_SECRET=replace-me
+MAX_CONVERSATIONS=10
+```
+
+Keep `.env`, basic-auth files, SQLite databases, logs, and runtime exports out of
+git. Use `deploy/quo-wrapper.env.example` only for placeholders.
 
 ---
 
@@ -171,6 +189,10 @@ Optional cron sync:
 - Optional shared secret header:
   - x-wrapper-secret
 - .env is gitignored
+- Runtime auth files such as `.dashboard-auth.json` must stay outside this
+  public repository.
+- Run a secret scan before opening PRs that touch deployment, auth, or config
+  files.
 
 ---
 
